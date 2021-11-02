@@ -2,19 +2,20 @@ import math
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.path as mpath
 from pprint import pprint
 from intervaltree import Interval, IntervalTree
 
 
 ANGLE_I = math.radians(90.0)
 IOR = 1.5
-NUM_RAYS = 2
-RAY_OPACITY = 1
+NUM_RAYS = 200
+RAY_OPACITY = 0.1
 
 BOUNCE_COLOR = ['tab:blue','tab:orange', 'tab:green', 'tab:red', 'tab:pink']
 
 class Ray:
-    def __init__(self, origin, direction, start=0., end=np.inf, dist=np.inf, phase=650*1e-9, amp=1):
+    def __init__(self, origin, direction, start=0., end=np.inf, phase_offset=0, dist=np.inf, wavelength=0.5, amp=1):
         """Create a ray with the given origin and direction."""
         self.origin = np.array(origin)
         self.direction = np.array(direction)
@@ -22,9 +23,21 @@ class Ray:
         self.end = end
         self.t = dist
 
-        self.phase = phase
+        self.phase_offset = phase_offset
+        self.wavelength = wavelength
         self.amp = amp
 
+    def get_end_phase_offest(self):
+        if self.t == np.inf:
+            return None
+
+        num_cycles = self.t/self.wavelength
+        offset = self.t%self.wavelength
+        offset_ratio = offset/self.wavelength
+
+        return (offset_ratio*2*math.pi + self.phase_offset)%(2*math.pi)
+
+        
 class LineSeg:
     def __init__(self, num, nodes, normals, eta):
         self.num = num # line segment ID
@@ -145,11 +158,13 @@ def radiance(ray, ls, depth, RRprob, weight):
 
         # print("org dir::", ray.direction)
         intersection = adj_intersect(intersection, new_dir)
-        r = Ray(intersection, new_dir)
-        new_trace = radiance(r, ls, depth, RRprob, weight)
-
         ray.end = intersection
         ray.t = dist
+        print("OFFSET", ray.get_end_phase_offest())
+        r = Ray(intersection, new_dir, phase_offset=ray.get_end_phase_offest())
+        new_trace = radiance(r, ls, depth, RRprob, weight)
+
+        
         new_trace.addRayToTrace(ray, dist)
         return new_trace
 
@@ -186,13 +201,21 @@ def collect_bin_ang(d):
         ang = -ang+2*math.pi
     return math.degrees(ang)
 
-def generate_ray(ang):
-    ox = (random.random()-0.5)-1
+def generate_ray(ang, num):
+    ox = num/NUM_RAYS
     oy = 1
     origin = np.array([ox, oy])
     # ray_dir = normalize(np.array([math.cos(math.radians(90)-ang), -math.sin(math.radians(90)-ang)]))
     ray_dir = normalize(np.array([9.99999809e-01-ang, -6.18144403e-04-ang]))
     return Ray(origin, ray_dir)
+
+# Random rays [0.0, 1.0]
+# def generate_ray(ang):
+#     ox = (random.random())
+#     oy = 1
+#     origin = np.array([ox, oy])
+#     ray_dir = normalize(np.array([9.99999809e-01-ang, -6.18144403e-04-ang]))
+#     return Ray(origin, ray_dir)
 
 # Gaussian ray
 # def generate_ray(ang):
@@ -211,23 +234,50 @@ def generate_ray(ang):
 
 #     return ray
 
-def plot_trace(ray, return_trace, collect_circ):
+def split_line(ray):
+    rs = []
+    rs.append(ray.origin)
+
+    t = ray.t if ray.t != np.inf else 100
+    rs.append(ray.origin+t*ray.direction)
+
+    return [x for x, y in rs], [y for x, y in rs]
+
+def get_markers(ray):
+    rs = []
+    t = ray.t if ray.t != np.inf else 100
+
+    phase_ratio = ray.phase_offset/(2*math.pi)
+    if (1-phase_ratio)*ray.wavelength < t:
+        rs.append(ray.origin+(1-phase_ratio)*ray.wavelength*ray.direction)
+    
+    i = 0
+    while i < t-(1-phase_ratio)*ray.wavelength:
+        rs.append(rs[0]+i*ray.direction)
+        i = i+ray.wavelength
+    # rs.append(ray.origin+ray.(1-phase_offset)*ray.wavelength*ray.direction)
+    # i = 0
+    # while i < t-(1-phase_offset)*ray.wavelength:
+    #     rs.append(rs[0]+i*ray.direction)
+    #     i = i+ray.wavelength
+
+    return [x for x, y in rs], [y for x, y in rs]
+
+def draw_rays(ray, color):
+    xs, ys = split_line(ray)
+    xm, ym = get_markers(ray)
+    # plt.plot(xs, ys, alpha=RAY_OPACITY, color=color)
+
+    p = ray.direction
+    plt.plot(xm, ym, linestyle = 'None', alpha=RAY_OPACITY, marker=[(-p[1], p[0]), (p[1], -p[0])], markersize=10, mec=color)
+
+
+def plot_trace(ax, ray, return_trace, collect_circ):
     rrays = return_trace.rays
     trace_len = len(rrays)
     num_bounce = return_trace.num - 1
 
-    r_o = ray.origin
-    r_d = ray.direction
-
-    p_end1 = r_o
-
-    p_end2 = rrays[num_bounce-1].origin
-    
-    x, y = [p_end1[0], p_end2[0]], [p_end1[1], p_end2[1]]
-    plt.plot(x, y, alpha=RAY_OPACITY, color="grey")
-
-    p_end1 = p_end2
-
+    draw_rays(rrays[num_bounce], "grey")
     # print("FIRST origin", ray.origin)
     # print("FIRST direction", ray.direction)
 
@@ -240,27 +290,18 @@ def plot_trace(ray, return_trace, collect_circ):
             # print("origin", r.origin)
             # print("direction", r.direction)
 
-            p_end2 = r.origin
-            
-            x, y = [p_end1[0], p_end2[0]], [p_end1[1], p_end2[1]]
-            plt.plot(x, y, '--', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5])
+            draw_rays(r, BOUNCE_COLOR[(num_bounce-1)%5])
+            # xs, ys = split_line(r)
+            # xm, ym = get_markers(r)
+            # plt.plot(xs, ys, '--', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5])
+            # plt.plot(xm, ym, linestyle = 'None', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5], marker='.', markersize=5, mec="blue")
 
-            p_end1 = p_end2
+    # xs, ys = split_line(rrays[0])
+    # xm, ym = get_markers(rrays[0])
+    # plt.plot(xs, ys, '--', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5], marker='.', markersize=5, mec="blue")
+    # plt.plot(xm, ym, linestyle = 'None', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5], marker='.', markersize=5, mec="blue")
 
-        p_end2 = rrays[0].origin
-
-        x, y = [p_end1[0], p_end2[0]], [p_end1[1], p_end2[1]]
-        plt.plot(x, y, '--', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5])
-
-    rr_o = rrays[0].origin
-    rr_d = rrays[0].direction
-
-    p_end1 = rr_o
-    p_end2 = rr_o + 1e10*rr_d
-
-    x, y = [p_end1[0], p_end2[0]], [p_end1[1], p_end2[1]]
-    plt.plot(x, y, '--', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5])
-    
+    draw_rays(rrays[0], BOUNCE_COLOR[(num_bounce-1)%5])
 
     ang = int(round(collect_bin_ang(rrays[0].direction)))
     if ang in collect_circ:
@@ -268,12 +309,12 @@ def plot_trace(ray, return_trace, collect_circ):
     else:
         collect_circ[ang] = return_trace.weight
 
-    return collect_circ
+    return collect_circ, ang
 
 def plot_surface():
     def height(x):
         # y = -2 
-        y = math.sin(x*10)/10-2
+        y = math.sin(x*5)/5-1
         return y
 
     points = []
@@ -296,28 +337,18 @@ def plot_surface():
 
     
 def makeplot():
-    plt.xlim([-5, 5])
-    plt.ylim([-5, 5])
+    fig, ax = plt.subplots(figsize=(6,6))
+    plt.xlim([-3, 3])
+    plt.ylim([-3, 3])
 
     collect_circ = dict([])
 
     rays = []
     for i in range(NUM_RAYS):
-        rays.append(generate_ray(ANGLE_I))
+        rays.append(generate_ray(ANGLE_I, i))
 
     # eta = math.sqrt(IOR*IOR - math.sin(theta)*math.sin(theta))/math.cos(theta)
     
-    # p1, p2, p3, p4 = np.array([1000, 1]), np.array([-1000, 1]), np.array([-1000, -1]), np.array([1000, -1])
-    # norm1, norm2, norm3 = np.array(perp_normal(p1, p2)), np.array(perp_normal(p2, p3)), np.array(perp_normal(p3, p4))
-    # print("NORMS", norm1, norm2, norm3)
-
-    # lineseg = LineSeg(3, [p1, p2, p3, p4], [norm1, norm2, norm3], IOR)
-    
-    # x1, y1 = [p1[0], p2[0]], [p1[1], p2[1]]
-    # x2, y2 = [p2[0], p3[0]], [p2[1], p3[1]]
-    # x3, y3 = [p3[0], p4[0]], [p3[1], p4[1]]
-    # plt.plot(x1, y1, 'black', x2, y2, 'black', x3, y3, 'black')
- 
     lineseg = plot_surface()
 
     tree = IntervalTree()
@@ -325,7 +356,8 @@ def makeplot():
     num_rays_hit = 0
     tot_weight = 0
 
-    prev_ray = None
+    prev_rray = None
+    prev_ang = None
 
     for ray in rays:
         # print("ray origin", ray.origin)
@@ -340,14 +372,25 @@ def makeplot():
             # print("return ray origin", return_ray.origin)
             # print("return ray direction", return_ray.direction)
 
-            collect_circ = plot_trace(ray, return_trace, collect_circ)
+            collect_circ, ang = plot_trace(ax, ray, return_trace, collect_circ)
             tot_weight = tot_weight + return_trace.weight
 
-        # if prev_ray != None:
+        if prev_rray != None and prev_ang != ang:
+            beg, end = ang, prev_ang
+            flip = ang - prev_ang > 0 and ang - prev_ang < 180
+            if flip:
+                beg = prev_ang
+                end = ang
+            
+            tree[beg:end] = (prev_rray, return_ray) if flip else (return_ray, prev_rray)
+            
+        prev_rray = return_ray
+        prev_ang = ang
 
-
-        prev_ray = ray
-
+    print("length", len(tree))
+    
+    for i in tree[100]:
+        print("QUERY", i.data[0].origin)
 
     distr_circ = dict([])
     for k, v in collect_circ.items():

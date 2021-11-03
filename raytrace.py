@@ -4,13 +4,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.path as mpath
 from pprint import pprint
-from intervaltree import Interval, IntervalTree
+# from intervaltree import Interval, IntervalTree
+from utils import ArcIntervalTree
 
 
-ANGLE_I = math.radians(90.0)
+ANGLE_I = math.radians(45.0)
 IOR = 1.5
-NUM_RAYS = 200
-RAY_OPACITY = 0.1
+NUM_RAYS = 100
+RAY_OPACITY = 1
 
 BOUNCE_COLOR = ['tab:blue','tab:orange', 'tab:green', 'tab:red', 'tab:pink']
 
@@ -26,6 +27,7 @@ class Ray:
         self.phase_offset = phase_offset
         self.wavelength = wavelength
         self.amp = amp
+        # self.c_wave = amp*np.exp(-1j*(2*np.pi*phase_offset/wavelength))
 
     def get_end_phase_offest(self):
         if self.t == np.inf:
@@ -202,11 +204,13 @@ def collect_bin_ang(d):
     return math.degrees(ang)
 
 def generate_ray(ang, num):
-    ox = num/NUM_RAYS
-    oy = 1
+    ox = num/NUM_RAYS-3
+    oy = 1+num/NUM_RAYS*math.cos(ANGLE_I)
     origin = np.array([ox, oy])
-    # ray_dir = normalize(np.array([math.cos(math.radians(90)-ang), -math.sin(math.radians(90)-ang)]))
-    ray_dir = normalize(np.array([9.99999809e-01-ang, -6.18144403e-04-ang]))
+    ray_dir = normalize(np.array([math.sin(math.radians(90)-ang), -math.cos(math.radians(90)-ang)]))
+
+    # ray_dir = normalize(np.array([9.99999809e-01-ang, -6.18144403e-04-ang]))
+    # ray_dir = normalize(np.array([9.99999809e-01-ang, -6.18144403e-04-ang]))
     return Ray(origin, ray_dir)
 
 # Random rays [0.0, 1.0]
@@ -287,20 +291,8 @@ def plot_trace(ax, ray, return_trace, collect_circ):
 
         for i in range(1, num_bounce):
             r = rrays[trace_len-1-i]
-            # print("origin", r.origin)
-            # print("direction", r.direction)
-
             draw_rays(r, BOUNCE_COLOR[(num_bounce-1)%5])
-            # xs, ys = split_line(r)
-            # xm, ym = get_markers(r)
-            # plt.plot(xs, ys, '--', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5])
-            # plt.plot(xm, ym, linestyle = 'None', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5], marker='.', markersize=5, mec="blue")
-
-    # xs, ys = split_line(rrays[0])
-    # xm, ym = get_markers(rrays[0])
-    # plt.plot(xs, ys, '--', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5], marker='.', markersize=5, mec="blue")
-    # plt.plot(xm, ym, linestyle = 'None', alpha=RAY_OPACITY, color=BOUNCE_COLOR[(num_bounce-1)%5], marker='.', markersize=5, mec="blue")
-
+            
     draw_rays(rrays[0], BOUNCE_COLOR[(num_bounce-1)%5])
 
     ang = int(round(collect_bin_ang(rrays[0].direction)))
@@ -314,7 +306,8 @@ def plot_trace(ax, ray, return_trace, collect_circ):
 def plot_surface():
     def height(x):
         # y = -2 
-        y = math.sin(x*5)/5-1
+        # y = math.sin(x)-1
+        y = math.sin(x*2)-1
         return y
 
     points = []
@@ -351,7 +344,7 @@ def makeplot():
     
     lineseg = plot_surface()
 
-    tree = IntervalTree()
+    tree = ArcIntervalTree()
 
     num_rays_hit = 0
     tot_weight = 0
@@ -375,21 +368,27 @@ def makeplot():
             collect_circ, ang = plot_trace(ax, ray, return_trace, collect_circ)
             tot_weight = tot_weight + return_trace.weight
 
-        if prev_rray != None and prev_ang != ang:
-            beg, end = ang, prev_ang
-            flip = ang - prev_ang > 0 and ang - prev_ang < 180
-            if flip:
-                beg = prev_ang
-                end = ang
-            
-            tree[beg:end] = (prev_rray, return_ray) if flip else (return_ray, prev_rray)
-            
-        prev_rray = return_ray
-        prev_ang = ang
+            if prev_rray != None and prev_ang != ang:
+                beg, end = ang, prev_ang
+                flip = ang - prev_ang > 0 and ang - prev_ang < 180
+                if flip:
+                    beg = prev_ang
+                    end = ang
+                print("f", ang)  
+                print("s", prev_ang)              
+                print("first", beg)
+                print("second", end)
+                data = (prev_rray, return_ray) if flip else (return_ray, prev_rray)
+                tree.add_interval(beg, end, data)
 
-    print("length", len(tree))
+            prev_rray = return_ray
+            prev_ang = ang
+
+    # print("tree", tree)
     
-    for i in tree[100]:
+    a, b = tree.get_intervals(116)
+    for i in a:
+        print(i)
         print("QUERY", i.data[0].origin)
 
     distr_circ = dict([])

@@ -9,10 +9,13 @@ from pprint import pprint
 from utils import ArcIntervalTree
 
 
-ANGLE_I = math.radians(45.0)
+ANGLE_I = math.radians(0.0)
 IOR = 1.5
-NUM_RAYS = 2
+NUM_RAYS = 100
 RAY_OPACITY = 1
+ARC_RES = 1
+SUR_RES = 400
+ZOOM_SIZE = 5
 
 BOUNCE_COLOR = ['tab:blue','tab:orange', 'tab:green', 'tab:red', 'tab:pink']
 
@@ -29,7 +32,7 @@ class Ray:
         self.wavelength = wavelength
         # self.amp = amp
         self.phasor = 1*np.exp(-1j*(2*np.pi/wavelength*0)) if phasor == None else phasor
-        print("PHASOR", self.phasor)
+        # print("PHASOR", self.phasor)
 
     def get_end_phase_offest(self):
         # if self.t == np.inf:
@@ -44,7 +47,7 @@ class Ray:
         return cmath.phase(self.phasor)
 
     def get_amp(self):
-        print("AMP: ", np.abs(self.phasor))
+        # print("AMP: ", np.abs(self.phasor))
         return np.abs(self.phasor)
         
 class LineSeg:
@@ -116,9 +119,30 @@ def FrDielecric(costhetai, costhetat, etai_parl, etat_parl, etai_perp, etat_perp
 
     rp = ((etat_parl*costhetai) - (etai_parl*costhetat)) / ((etat_parl*costhetai) + (etai_parl*costhetat)) # Rp
     # tp = (2*etai_parl*costhetai)/(etat_parl*costhetai + etai_parl*costhetat)
+    
+    return rs*rs if perp else rp*rp
+    # ONLY REFLECTTION
+    # return 1
+    # TAKE AVG OF POLARIZATIONS
     # return (rs*rs + rp*rp) / 2
-    # return rs*rs if perp else rp*rp
-    return 1
+
+# def transmission_fresnel(costhetai, costhetat, etai_parl, etat_parl, etai_perp, etat_perp, entering, perp):
+#     if not entering:
+#         temp = etai_parl
+#         etai_parl = etat_parl
+#         etat_parl = temp
+
+#         temp = etai_perp
+#         etai_perp = etat_perp
+#         etat_perp = temp
+
+#     rs = 2*(etai_perp*costhetai) / ((etai_perp*costhetai) + (etat_perp*costhetat)) # Rs
+#     # ts = (2*etai_perp*costhetai)/(etai_perp*costhetai + etat_perp*costhetat)
+
+#     rp = 2*(etai_parl*costhetai) / ((etat_parl*costhetai) + (etai_parl*costhetat)) # Rp
+#     # tp = (2*etai_parl*costhetai)/(etat_parl*costhetai + etai_parl*costhetat)
+    
+#     return rs*rs*etat_perp*costhetat/(etai_perp*costhetai) if perp else rp*rp
 
 def adj_intersect(intersect, direction):
     return intersect+1e-10*direction
@@ -132,7 +156,7 @@ def radiance(ray, ls, depth, RRprob, weight, total_dist):
     # print("ray direction", ray.direction)
     # print("intersection", intersection)
     # print("num_ls", num_ls)
-    if (intersection == []):
+    if (intersection == [] or depth > 0):
         return Trace(ray, weight=weight)
 
     ratio = 0
@@ -176,7 +200,6 @@ def radiance(ray, ls, depth, RRprob, weight, total_dist):
 
         new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
         r = Ray(intersection, new_dir, phase_offset=ray.get_end_phase_offest(), phasor=new_phasor)
-        print("FRESNEL", fresnel)
         new_trace = radiance(r, ls, depth, RRprob, weight, total_dist)
 
         new_trace.addRayToTrace(ray, dist)
@@ -184,23 +207,26 @@ def radiance(ray, ls, depth, RRprob, weight, total_dist):
 
     # refraction
     else:
-        # DOESN'T TRACK PHASE CHANGES
-        nc = 1.0
-        nt = ls.eta
-        nnt = nc/nt if into else nt/nc
-        ddn = np.dot(ray.direction, nl)
-        cos2t = 1 - nnt*nnt*(1 - ddn*ddn)
+        # nc = 1.0
+        # nt = ls.eta
+        # nnt = nc/nt if into else nt/nc
+        # ddn = np.dot(ray.direction, nl)
+        # cos2t = 1 - nnt*nnt*(1 - ddn*ddn)
         if cos2t < 0:
             # return None
             cos2t = -cos2t
+        fresnel = 1-fresnel # transmission_fresnel(costhetai, costhetat, 1.0, ls.eta, 1.0, ls.eta, into, True)
         
         tdir = normalize((ray.direction*nnt - n*((1 if into else -1)*(ddn*nnt + math.sqrt(cos2t)))))
+        
         intersection = adj_intersect(intersection, tdir)
-        r = Ray(intersection, tdir)
-        new_trace = radiance(r, ls, depth, RRprob, weight, total_dist)
-
         ray.end = intersection
         ray.t = dist
+        
+        new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
+        r = Ray(intersection, tdir, phase_offset=ray.get_end_phase_offest(), phasor=new_phasor)
+        new_trace = radiance(r, ls, depth, RRprob, weight, total_dist)
+
         new_trace.addRayToTrace(ray, dist)
         return new_trace
 
@@ -217,15 +243,30 @@ def collect_bin_ang(d):
     return math.degrees(ang)
 
 def generate_ray(ang, num):
-    ox = num/NUM_RAYS-3
-    # print(ox)
+    if NUM_RAYS <= 1:
+        raise Exception("NUM_RAYS must be greater than 1")
+    # ox = num/NUM_RAYS-3
+    oy = 4*num/(NUM_RAYS-1)-2
     # print("cos", math.tan(ANGLE_I))
-    oy = 1+num/NUM_RAYS*math.tan(ANGLE_I)
+    ox = -5+num/NUM_RAYS*math.tan(ANGLE_I)
     print("RAY ORIGIN", ox, oy)
     origin = np.array([ox, oy])
-    ray_dir = normalize(np.array([math.sin(ang), -math.cos(ang)]))
+    ray_dir = normalize(np.array([math.cos(ang), math.sin(ang)]))
 
     return Ray(origin, ray_dir)
+
+# Rays going downwards
+# def generate_ray(ang, num):
+#     # ox = num/NUM_RAYS-3
+#     ox = num/NUM_RAYS-0.5
+#     # print(ox)
+#     # print("cos", math.tan(ANGLE_I))
+#     oy = 1+num/NUM_RAYS*math.tan(ANGLE_I)
+#     print("RAY ORIGIN", ox, oy)
+#     origin = np.array([ox, oy])
+#     ray_dir = normalize(np.array([math.sin(ang), -math.cos(ang)]))
+
+#     return Ray(origin, ray_dir)
 
 # Random rays [0.0, 1.0]
 # def generate_ray(ang):
@@ -315,19 +356,31 @@ def plot_trace(ax, ray, return_trace, collect_circ):
 def plot_surface():
     def height(x):
         # y = -2 
-        y = (x/5)**2*2-2
+        # y = (x/5)**2*2-2
+        y = -math.sqrt(4-x**2)
         # y = math.sin(x*3)/2-1
         # y = math.sin(x*2)-1
         return y
 
     points = []
     normals = []
-    for i in range(-100, 100):
-        j = i/20
+    for i in range(-10*SUR_RES, 10*SUR_RES):
+        j = i/5/SUR_RES
         points.append(np.array([j, height(j)]))
 
         if len(points) > 1:
             normals.append(np.array(perp_normal(points[len(points)-2], points[len(points)-1])))
+
+    if True:
+        for i in range(-10*SUR_RES, 10*SUR_RES):
+            j = i/5/SUR_RES
+            points.append(np.array([-j, -height(j)]))
+
+            if len(points) > 1:
+                normals.append(np.array(perp_normal(points[len(points)-2], points[len(points)-1])))
+
+        points.append(points[0])
+        normals.append(np.array(perp_normal(points[len(points)-2], points[len(points)-1])))
 
     lineseg = LineSeg(len(normals), points, normals, IOR)
 
@@ -360,7 +413,7 @@ def calculate_interference(ang, interval_set):
 
         # diff = ang2-1-ang1
         diff = ang2-ang1
-        print("DIFF", diff)
+        # print("DIFF", diff)
 
         if diff == 0:
             raise Exception("rare case of ang being same happened, should've crashed already")
@@ -375,15 +428,15 @@ def calculate_interference(ang, interval_set):
             w2 = (ang - ang1)/(ang2 - ang1)
             arc_w = np.linalg.norm(iray2.origin-iray1.origin)/diff
             
-            print("AMPLITUDE", np.abs(w1*rray1.phasor + w2*rray2.phasor))
-            intf = intf + w1*np.abs(rray1.phasor)*math.sqrt(arc_w) + w2*np.abs(rray2.phasor)*math.sqrt(arc_w)
+            # print("AMPLITUDE", w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))
+            intf = intf + (w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))*math.sqrt(arc_w)
             
     return intf
     
 def makeplot():
     fig, ax = plt.subplots(figsize=(6,6))
-    plt.xlim([-10, 10])
-    plt.ylim([-10, 10])
+    plt.xlim([-ZOOM_SIZE, ZOOM_SIZE])
+    plt.ylim([-ZOOM_SIZE, ZOOM_SIZE])
 
     collect_circ = dict([])
 
@@ -428,19 +481,19 @@ def makeplot():
             prev_ang = ang
 
     # print("tree", len(tree))
-    print("INCIDENT DIST", np.linalg.norm(rays[0].origin-rays[NUM_RAYS-1].origin))
-    print("RESULT DIST", 61.83732575559948-44.541636208491866)
+    print("INCIDENT DIST/ENERGY", np.linalg.norm(rays[0].origin-rays[NUM_RAYS-1].origin))
     # tree intervals are [beg, end)
-    a = tree.get_intervals(45)
-    for i in a:
-        print("INTERVAL", i)
+    # a = tree.get_intervals(45)
+    # for i in a:
+    #     print("INTERVAL", i)
 
     sum_intensity = 0
-    for i in range(360):
-        x = calculate_interference(i, tree.get_intervals(i))
+    for i in range(360*ARC_RES):
+        arc = i/ARC_RES
+        x = calculate_interference(arc, tree.get_intervals(arc))
         if x!=0: 
-            print("angle intensity:", i, x**2)
-            sum_intensity = sum_intensity + x**2
+            print("angle intensity:", arc, x**2)
+            sum_intensity = sum_intensity + (x**2)/ARC_RES
     print("ENERGY", sum_intensity)
 
     distr_circ = dict([])
@@ -453,4 +506,5 @@ def makeplot():
 
 makeplot()
 
+# 10 rays: outgoing energy: 1.27282423, incident energy: 1.2727922061357855
     

@@ -39,20 +39,20 @@ class ArcIntervalTree(IntervalTree):
         if np.abs(ang2 - ang1) >= 180:
             if ang1 >= 359:
                 self[ang2-360:0] = data
-                print("ang1:", ang2-360)
-                print("ang2:", 0)
+                # print("ang1:", ang2-360)
+                # print("ang2:", 0)
             else:
                 self[ang2-360:ang1] = data
-                print("ang1:", ang2-360)
-                print("ang2:", (ang1))
+                # print("ang1:", ang2-360)
+                # print("ang2:", (ang1))
         else: 
             if ang2 >= 359:
-                print("ang1:", ang1-360)
-                print("ang2:", 0)
+                # print("ang1:", ang1-360)
+                # print("ang2:", 0)
                 self[ang1-360:0] = data
             else:
-                print("ang1:", ang1)
-                print("ang2:", (ang2))
+                # print("ang1:", ang1)
+                # print("ang2:", (ang2))
                 self[ang1:ang2] = data
 
     def get_intervals(self, point):

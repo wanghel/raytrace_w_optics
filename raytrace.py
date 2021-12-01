@@ -11,10 +11,10 @@ from utils import ArcIntervalTree
 
 ANGLE_I = math.radians(0.0)
 IOR = 1.5
-NUM_RAYS = 100
+NUM_RAYS = 50
 RAY_OPACITY = 1
 ARC_RES = 1
-SUR_RES = 400
+SUR_RES = 1000
 ZOOM_SIZE = 5
 
 BOUNCE_COLOR = ['tab:blue','tab:orange', 'tab:green', 'tab:red', 'tab:pink']
@@ -240,6 +240,7 @@ def collect_bin_ang(d):
     ang = math.acos(np.dot(np.array(normalize([1, 0])), d))
     if d[1] < 0:
         ang = -ang+2*math.pi
+    ang = (ang-math.pi)%(2*math.pi)
     return math.degrees(ang)
 
 def generate_ray(ang, num):
@@ -435,6 +436,7 @@ def calculate_interference(ang, interval_set):
     
 def makeplot():
     fig, ax = plt.subplots(figsize=(6,6))
+    plot1 = plt.figure(1)
     plt.xlim([-ZOOM_SIZE, ZOOM_SIZE])
     plt.ylim([-ZOOM_SIZE, ZOOM_SIZE])
 
@@ -487,19 +489,36 @@ def makeplot():
     # for i in a:
     #     print("INTERVAL", i)
 
+    xs = []
+    ys = []
     sum_intensity = 0
     for i in range(360*ARC_RES):
         arc = i/ARC_RES
+        xs.append(arc)
         x = calculate_interference(arc, tree.get_intervals(arc))
+        ys.append(x)
         if x!=0: 
             print("angle intensity:", arc, x**2)
             sum_intensity = sum_intensity + (x**2)/ARC_RES
     print("ENERGY", sum_intensity)
+    plot2 = plt.figure(2)
+    plt.plot(xs, ys)
 
     distr_circ = dict([])
     for k, v in collect_circ.items():
         distr_circ[k] = v/tot_weight
     pprint(distr_circ)
+
+
+    plot3 = plt.figure(3)
+    xs = list(range(360))
+    ys = []
+    for i in xs:
+        if i in distr_circ:
+            ys.append(distr_circ[i])
+        else:
+            ys.append(0)
+    plt.hist(xs, 360, weights=ys)
 
     plt.show()
 

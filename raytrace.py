@@ -11,10 +11,10 @@ from utils import ArcIntervalTree
 
 ANGLE_I = math.radians(0.0)
 IOR = 1.5
-NUM_RAYS = 50
+NUM_RAYS = 100
 RAY_OPACITY = 1
-ARC_RES = 1
-SUR_RES = 1000
+ARC_RES = 100
+SUR_RES = 100
 ZOOM_SIZE = 5
 
 BOUNCE_COLOR = ['tab:blue','tab:orange', 'tab:green', 'tab:red', 'tab:pink']
@@ -89,7 +89,7 @@ class LineSeg:
         return intersect_p, intersect_t, seg_num
 
 class Trace:
-    def __init__(self, ray, t=[np.inf], weight=1):
+    def __init__(self, ray, t=0, weight=1):
         self.rays = [ray]
         self.tot_dist = t
         self.weight = weight
@@ -97,7 +97,8 @@ class Trace:
 
     def addRayToTrace(self, ray, t):
         self.rays.append(ray)
-        self.tot_dist = self.tot_dist + t
+        if t != np.inf:
+            self.tot_dist = self.tot_dist + t
         # self.weight = weight
         self.num = self.num + 1
 
@@ -120,29 +121,49 @@ def FrDielecric(costhetai, costhetat, etai_parl, etat_parl, etai_perp, etat_perp
     rp = ((etat_parl*costhetai) - (etai_parl*costhetat)) / ((etat_parl*costhetai) + (etai_parl*costhetat)) # Rp
     # tp = (2*etai_parl*costhetai)/(etat_parl*costhetai + etai_parl*costhetat)
     
-    return rs*rs if perp else rp*rp
+    # return rs*rs if perp else rp*rp
     # ONLY REFLECTTION
-    # return 1
+    return 1
     # TAKE AVG OF POLARIZATIONS
     # return (rs*rs + rp*rp) / 2
 
-# def transmission_fresnel(costhetai, costhetat, etai_parl, etat_parl, etai_perp, etat_perp, entering, perp):
-#     if not entering:
-#         temp = etai_parl
-#         etai_parl = etat_parl
-#         etat_parl = temp
+def reflection_fresnel(costhetai, costhetat, etai_parl, etat_parl, etai_perp, etat_perp, entering, perp):
+    if not entering:
+        temp = etai_parl
+        etai_parl = etat_parl
+        etat_parl = temp
 
-#         temp = etai_perp
-#         etai_perp = etat_perp
-#         etat_perp = temp
+        temp = etai_perp
+        etai_perp = etat_perp
+        etat_perp = temp
 
-#     rs = 2*(etai_perp*costhetai) / ((etai_perp*costhetai) + (etat_perp*costhetat)) # Rs
-#     # ts = (2*etai_perp*costhetai)/(etai_perp*costhetai + etat_perp*costhetat)
+    rs = ((etai_perp*costhetai) - (etat_perp*costhetat)) / ((etai_perp*costhetai) + (etat_perp*costhetat)) # Rs
+    # ts = (2*etai_perp*costhetai)/(etai_perp*costhetai + etat_perp*costhetat)
 
-#     rp = 2*(etai_parl*costhetai) / ((etat_parl*costhetai) + (etai_parl*costhetat)) # Rp
-#     # tp = (2*etai_parl*costhetai)/(etat_parl*costhetai + etai_parl*costhetat)
+    rp = ((etat_parl*costhetai) - (etai_parl*costhetat)) / ((etat_parl*costhetai) + (etai_parl*costhetat)) # Rp
+    # tp = (2*etai_parl*costhetai)/(etat_parl*costhetai + etai_parl*costhetat)
     
-#     return rs*rs*etat_perp*costhetat/(etai_perp*costhetai) if perp else rp*rp
+    # return rs if perp else rp
+    return 1
+
+def transmission_fresnel(costhetai, costhetat, etai_parl, etat_parl, etai_perp, etat_perp, entering, perp):
+    if not entering:
+        temp = etai_parl
+        etai_parl = etat_parl
+        etat_parl = temp
+
+        temp = etai_perp
+        etai_perp = etat_perp
+        etat_perp = temp
+
+    rs = 2*(etai_perp*costhetai) / ((etai_perp*costhetai) + (etat_perp*costhetat)) # Rs
+    # ts = (2*etai_perp*costhetai)/(etai_perp*costhetai + etat_perp*costhetat)
+
+    rp = 2*(etai_parl*costhetai) / ((etat_parl*costhetai) + (etai_parl*costhetat)) # Rp
+    # tp = (2*etai_parl*costhetai)/(etat_parl*costhetai + etai_parl*costhetat)
+    
+    return rs if perp else rp
+    # return 1
 
 def adj_intersect(intersect, direction):
     return intersect+1e-10*direction
@@ -192,6 +213,8 @@ def radiance(ray, ls, depth, RRprob, weight, total_dist):
     
     # reflection
     if (random.random() < fresnel):
+        fresnel = reflection_fresnel(costhetai, costhetat, 1.0, ls.eta, 1.0, ls.eta, into, True)
+        
         new_dir = normalize(ray.direction - n*2*np.dot(n,ray.direction))
 
         intersection = adj_intersect(intersection, new_dir)
@@ -215,8 +238,13 @@ def radiance(ray, ls, depth, RRprob, weight, total_dist):
         if cos2t < 0:
             # return None
             cos2t = -cos2t
-        fresnel = 1-fresnel # transmission_fresnel(costhetai, costhetat, 1.0, ls.eta, 1.0, ls.eta, into, True)
-        
+        tdir = normalize((ray.direction*nnt - n*((1 if into else -1)*(ddn*nnt + math.sqrt(cos2t)))))
+        costhetai = abs(np.dot(nl, ray.direction))
+        costhetat = abs(np.dot(nl, tdir))
+        fresnel = transmission_fresnel(costhetai, costhetat, 1.0, ls.eta, 1.0, ls.eta, into, True)
+        # print("RECALCULATED T FRESNEL", fresnel1)
+        # fresnel = 1-fresnel
+        # print("USING ORG FRESNEL", fresnel)
         tdir = normalize((ray.direction*nnt - n*((1 if into else -1)*(ddn*nnt + math.sqrt(cos2t)))))
         
         intersection = adj_intersect(intersection, tdir)
@@ -224,7 +252,9 @@ def radiance(ray, ls, depth, RRprob, weight, total_dist):
         ray.t = dist
         
         new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
+        # print("NEW PHASOR", np.abs(new_phasor)**2)
         r = Ray(intersection, tdir, phase_offset=ray.get_end_phase_offest(), phasor=new_phasor)
+        # print("AMPLITUDE", r.get_amp())
         new_trace = radiance(r, ls, depth, RRprob, weight, total_dist)
 
         new_trace.addRayToTrace(ray, dist)
@@ -243,31 +273,31 @@ def collect_bin_ang(d):
     ang = (ang-math.pi)%(2*math.pi)
     return math.degrees(ang)
 
-def generate_ray(ang, num):
-    if NUM_RAYS <= 1:
-        raise Exception("NUM_RAYS must be greater than 1")
-    # ox = num/NUM_RAYS-3
-    oy = 4*num/(NUM_RAYS-1)-2
-    # print("cos", math.tan(ANGLE_I))
-    ox = -5+num/NUM_RAYS*math.tan(ANGLE_I)
-    print("RAY ORIGIN", ox, oy)
-    origin = np.array([ox, oy])
-    ray_dir = normalize(np.array([math.cos(ang), math.sin(ang)]))
-
-    return Ray(origin, ray_dir)
-
-# Rays going downwards
 # def generate_ray(ang, num):
+#     if NUM_RAYS <= 1:
+#         raise Exception("NUM_RAYS must be greater than 1")
 #     # ox = num/NUM_RAYS-3
-#     ox = num/NUM_RAYS-0.5
-#     # print(ox)
+#     oy = 4*num/(NUM_RAYS-1)-2
 #     # print("cos", math.tan(ANGLE_I))
-#     oy = 1+num/NUM_RAYS*math.tan(ANGLE_I)
+#     ox = -5+num/NUM_RAYS*math.tan(ANGLE_I)
 #     print("RAY ORIGIN", ox, oy)
 #     origin = np.array([ox, oy])
-#     ray_dir = normalize(np.array([math.sin(ang), -math.cos(ang)]))
+#     ray_dir = normalize(np.array([math.cos(ang), math.sin(ang)]))
 
 #     return Ray(origin, ray_dir)
+
+# Rays going downwards
+def generate_ray(ang, num):
+    # ox = num/NUM_RAYS-3
+    ox = num/NUM_RAYS-0.5
+    # print(ox)
+    # print("cos", math.tan(ANGLE_I))
+    oy = 1+num/NUM_RAYS*math.tan(ANGLE_I)
+    print("RAY ORIGIN", ox, oy)
+    origin = np.array([ox, oy])
+    ray_dir = normalize(np.array([math.sin(ang), -math.cos(ang)]))
+
+    return Ray(origin, ray_dir)
 
 # Random rays [0.0, 1.0]
 # def generate_ray(ang):
@@ -357,9 +387,9 @@ def plot_trace(ax, ray, return_trace, collect_circ):
 def plot_surface():
     def height(x):
         # y = -2 
-        # y = (x/5)**2*2-2
-        y = -math.sqrt(4-x**2)
-        # y = math.sin(x*3)/2-1
+        y = (x/5)**2*2-2
+        # y = -math.sqrt(4-x**2)
+        # y = math.sin(x*13)/10-1
         # y = math.sin(x*2)-1
         return y
 
@@ -372,7 +402,7 @@ def plot_surface():
         if len(points) > 1:
             normals.append(np.array(perp_normal(points[len(points)-2], points[len(points)-1])))
 
-    if True:
+    if False:
         for i in range(-10*SUR_RES, 10*SUR_RES):
             j = i/5/SUR_RES
             points.append(np.array([-j, -height(j)]))
@@ -393,18 +423,13 @@ def plot_surface():
 
 def calculate_interference(ang, interval_set):
     intf = 0 
+    intrpol_amp = 0
     for ang1, ang2, data in interval_set:
         # print("BEG", beg)
         # print("END", end)
         # print(data)
         trace1 = data[0]
         trace2 = data[1]
-
-        # for i in trace1.rays:
-        #     print("TRACE 1", i.phase_offset)
-
-        # for i in trace2.rays:
-        #     print("TRACE 2", i.phase_offset)
 
         rray1 = trace1.rays[0]
         rray2 = trace2.rays[0]
@@ -413,26 +438,36 @@ def calculate_interference(ang, interval_set):
         iray2 = trace2.rays[-1]
 
         # diff = ang2-1-ang1
-        diff = ang2-ang1
+        diff = (ang2-ang1)
         # print("DIFF", diff)
 
         if diff == 0:
             raise Exception("rare case of ang being same happened, should've crashed already")
             # intf = intf + (rray1.phasor+rray2.phasor)/2
         else:
-            # w1 = (ang2-1 - ang)/(ang2-1 - ang1)
-            # w2 = (ang1 - ang)/(ang2-1 - ang1)
-            # arc_w = np.linalg.norm(iray2.origin-iray1.origin)/diff
-            # print("ARC W", arc_w
-
             w1 = (ang2 - ang)/(ang2 - ang1)
             w2 = (ang - ang1)/(ang2 - ang1)
+ 
             arc_w = np.linalg.norm(iray2.origin-iray1.origin)/diff
+            # print("arc_w", arc_w)
+            # print("SUB DIST", np.linalg.norm(iray2.origin-iray1.origin))
+            # print("DIFF", diff)
+            # print("iray1", iray1.origin)
+            # print("iray2", iray2.origin)
+            # print("rray1", np.abs(rray1.phasor)**2)
+            # print("rray2", np.abs(rray2.phasor)**2)
             
             # print("AMPLITUDE", w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))
-            intf = intf + (w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))*math.sqrt(arc_w)
-            
-    return intf
+            intf = intf + (w1*rray1.phasor + w2*rray2.phasor)*math.sqrt(arc_w)
+            intrpol_amp = intrpol_amp + (w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))*math.sqrt(arc_w)
+            # print("phasor 1", np.abs(rray1.phasor), rray1.phasor)
+            # print("phasor 2", np.abs(rray2.phasor), rray2.phasor)
+            # print("W", w1+w2)
+            # print("AMP", (w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor)))
+            # print("AMP1", np.abs(rray1.phasor))
+            # print("AMP2", np.abs(rray2.phasor))
+    # print("INTF", intf)
+    return intf, intrpol_amp
     
 def makeplot():
     fig, ax = plt.subplots(figsize=(6,6))
@@ -443,11 +478,12 @@ def makeplot():
     collect_circ = dict([])
 
     rays = []
+    
     for i in range(NUM_RAYS):
+        # ray_pairs.append((generate_ray(ANGLE_I, i), generate_ray(ANGLE_I, i+1)))
         rays.append(generate_ray(ANGLE_I, i))
 
-    # eta = math.sqrt(IOR*IOR - math.sin(theta)*math.sin(theta))/math.cos(theta)
-    
+
     lineseg = plot_surface()
 
     tree = ArcIntervalTree()
@@ -483,7 +519,7 @@ def makeplot():
             prev_ang = ang
 
     # print("tree", len(tree))
-    print("INCIDENT DIST/ENERGY", np.linalg.norm(rays[0].origin-rays[NUM_RAYS-1].origin))
+    print("INCIDENT ENERGY/ DIST", np.linalg.norm(rays[0].origin-rays[-1].origin))
     # tree intervals are [beg, end)
     # a = tree.get_intervals(45)
     # for i in a:
@@ -492,15 +528,19 @@ def makeplot():
     xs = []
     ys = []
     sum_intensity = 0
+    sum_intensity_from_amp = 0
+
     for i in range(360*ARC_RES):
         arc = i/ARC_RES
         xs.append(arc)
-        x = calculate_interference(arc, tree.get_intervals(arc))
-        ys.append(x)
+        x, x1 = calculate_interference(arc, tree.get_intervals(arc))
+        ys.append(np.abs(x)**2)
         if x!=0: 
-            print("angle intensity:", arc, x**2)
-            sum_intensity = sum_intensity + (x**2)/ARC_RES
+            # print("angle intensity:", arc, (np.abs(x)**2)/ARC_RES)
+            sum_intensity = sum_intensity + (np.abs(x)**2)/ARC_RES
+            sum_intensity_from_amp = sum_intensity_from_amp + x1**2/ARC_RES
     print("ENERGY", sum_intensity)
+    print("ENERGY INTRPOL AMP", sum_intensity_from_amp)
     plot2 = plt.figure(2)
     plt.plot(xs, ys)
 

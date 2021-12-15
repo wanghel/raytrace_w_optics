@@ -7,6 +7,7 @@ import matplotlib.path as mpath
 from pprint import pprint
 # from intervaltree import Interval, IntervalTree
 from utils import ArcIntervalTree
+from binarytree import Node
 
 
 ANGLE_I = math.radians(0.0)
@@ -30,25 +31,13 @@ class Ray:
 
         self.phase_offset = phase_offset
         self.wavelength = wavelength
-        # self.amp = amp
         self.phasor = 1*np.exp(-1j*(2*np.pi/wavelength*0)) if phasor == None else phasor
-        # print("PHASOR", self.phasor)
 
     def get_end_phase_offest(self):
-        # if self.t == np.inf:
-        #     return None
-
-        # num_cycles = self.t/self.wavelength
-        
-        # offset = self.t%self.wavelength
-        # offset_ratio = offset/self.wavelength
-        # print("OFFSET", (offset_ratio*2*math.pi + self.phase_offset))
-        # return (offset_ratio*2*math.pi + self.phase_offset)
         print("OFFSET:", cmath.phase(self.phasor))
         return cmath.phase(self.phasor)
 
     def get_amp(self):
-        # print("AMP: ", np.abs(self.phasor))
         return np.abs(self.phasor)
         
 class LineSeg:
@@ -92,14 +81,20 @@ class LineSeg:
         # return [], None, None
         return intersect_p, intersect_t, seg_num
 
-class Trace:
+class TraceInfo:
     def __init__(self, ray, t=0, weight=1):
-        self.rays = [ray]
+        self.rays = Node(ray)
         self.tot_dist = t
         self.weight = weight
         self.num = 1
 
-    def addRayToTrace(self, ray, t):
+class Trace:
+    def __init__(self, ray, t=0, weight=1):
+        info = TraceInfo(ray, t, weight)
+        self.rays = Node(info)
+
+    def addRayToTrace(self, ray, t, isRefl):
+
         self.rays.append(ray)
         if t != np.inf:
             self.tot_dist = self.tot_dist + t
@@ -172,17 +167,18 @@ def transmission_fresnel(costhetai, costhetat, etai_parl, etat_parl, etai_perp, 
 def adj_intersect(intersect, direction):
     return intersect+1e-10*direction
 
-def radiance(ray, ls, depth, RRprob, weight, total_dist):
+def radiance(trace, ray, ls, depth, RRprob, weight, total_dist):
     intersection, dist, num_ls = ls.intersect(ray)
     if dist != None:
         total_dist = total_dist + dist
+        # trace.value.
     # print("WEIGHT", weight)
     # print("ray origin", ray.origin)
     # print("ray direction", ray.direction)
     # print("intersection", intersection)
     # print("num_ls", num_ls)
     if (intersection == [] or depth > 0):
-        return Trace(ray, weight=weight)
+        return Node(TraceInfo(ray, weight=weight))
 
     ratio = 0
     n = None
@@ -211,58 +207,46 @@ def radiance(ray, ls, depth, RRprob, weight, total_dist):
     depth = depth + 1
     if depth > 5:
         if random.random() > RRprob:
-            return Trace(ray, weight=weight)
+            return Node(TraceInfo(ray, weight=weight))
         else:
             weight = weight / RRprob
     
     # reflection
-    if (random.random() < fresnel):
-        fresnel = reflection_fresnel(costhetai, costhetat, 1.0, ls.eta, 1.0, ls.eta, into, True)
-        
-        new_dir = normalize(ray.direction - n*2*np.dot(n,ray.direction))
+    fresnel = reflection_fresnel(costhetai, costhetat, 1.0, ls.eta, 1.0, ls.eta, into, True)
+    
+    new_dir = normalize(ray.direction - n*2*np.dot(n,ray.direction))
+    intersection = adj_intersect(intersection, new_dir)
+    ray.end = intersection
+    ray.t = dist
 
-        intersection = adj_intersect(intersection, new_dir)
-        ray.end = intersection
-        ray.t = dist
-
-        new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
-        r = Ray(intersection, new_dir, phase_offset=ray.get_end_phase_offest(), phasor=new_phasor)
-        new_trace = radiance(r, ls, depth, RRprob, weight, total_dist)
-
-        new_trace.addRayToTrace(ray, dist)
-        return new_trace
+    new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
+    r = Ray(intersection, new_dir, phase_offset=ray.get_end_phase_offest(), phasor=new_phasor)
+    new_trace = TraceInfo(ray)
+    new_trace = radiance(new_trace, r, ls, depth, RRprob, weight, total_dist)
+    trace.left = new_trace
 
     # refraction
-    else:
-        # nc = 1.0
-        # nt = ls.eta
-        # nnt = nc/nt if into else nt/nc
-        # ddn = np.dot(ray.direction, nl)
-        # cos2t = 1 - nnt*nnt*(1 - ddn*ddn)
-        if cos2t < 0:
-            # return None
-            cos2t = -cos2t
-        tdir = normalize((ray.direction*nnt - n*((1 if into else -1)*(ddn*nnt + math.sqrt(cos2t)))))
-        costhetai = abs(np.dot(nl, ray.direction))
-        costhetat = abs(np.dot(nl, tdir))
-        fresnel = transmission_fresnel(costhetai, costhetat, 1.0, ls.eta, 1.0, ls.eta, into, True)
-        # print("RECALCULATED T FRESNEL", fresnel1)
-        # fresnel = 1-fresnel
-        # print("USING ORG FRESNEL", fresnel)
-        tdir = normalize((ray.direction*nnt - n*((1 if into else -1)*(ddn*nnt + math.sqrt(cos2t)))))
-        
-        intersection = adj_intersect(intersection, tdir)
-        ray.end = intersection
-        ray.t = dist
-        
-        new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
-        # print("NEW PHASOR", np.abs(new_phasor)**2)
-        r = Ray(intersection, tdir, phase_offset=ray.get_end_phase_offest(), phasor=new_phasor)
-        # print("AMPLITUDE", r.get_amp())
-        new_trace = radiance(r, ls, depth, RRprob, weight, total_dist)
+    if cos2t < 0:
+        cos2t = -cos2t
+    tdir = normalize((ray.direction*nnt - n*((1 if into else -1)*(ddn*nnt + math.sqrt(cos2t)))))
+    costhetai = abs(np.dot(nl, ray.direction))
+    costhetat = abs(np.dot(nl, tdir))
+    fresnel = transmission_fresnel(costhetai, costhetat, 1.0, ls.eta, 1.0, ls.eta, into, True)
 
-        new_trace.addRayToTrace(ray, dist)
-        return new_trace
+    tdir = normalize((ray.direction*nnt - n*((1 if into else -1)*(ddn*nnt + math.sqrt(cos2t)))))
+    
+    intersection = adj_intersect(intersection, tdir)
+    ray.end = intersection
+    ray.t = dist
+    
+    new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
+
+    r = Ray(intersection, tdir, phase_offset=ray.get_end_phase_offest(), phasor=new_phasor)
+    new_trace = TraceInfo(ray)
+    new_trace = radiance(new_trace, r, ls, depth, RRprob, weight, total_dist)
+    trace.right = new_trace
+
+    return trace
 
 def perp_normal(p1, p2):
     dx = p2[0]-p1[0]
@@ -515,8 +499,9 @@ def makeplot():
     for ray in rays:
         # print("ray origin", ray.origin)
         # print("ray direction", ray.direction)
-
-        return_trace = radiance(ray, lineseg, 0, 0.95, 1, 0)
+        root = TraceInfo(ray)
+        trace = Node(root)
+        return_trace = radiance(root, ray, lineseg, 0, 0.95, 1, 0)
         
         if return_trace.num > 1:
             print("---return trace is greater than 1---")

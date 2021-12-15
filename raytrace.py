@@ -88,19 +88,6 @@ class TraceInfo:
         self.weight = weight
         self.num = 1
 
-class Trace:
-    def __init__(self, ray, t=0, weight=1):
-        info = TraceInfo(ray, t, weight)
-        self.rays = Node(info)
-
-    def addRayToTrace(self, ray, t, isRefl):
-
-        self.rays.append(ray)
-        if t != np.inf:
-            self.tot_dist = self.tot_dist + t
-        # self.weight = weight
-        self.num = self.num + 1
-
 def normalize(v):
     return v / np.linalg.norm(v)
 
@@ -218,6 +205,9 @@ def radiance(trace, ray, ls, depth, RRprob, weight, total_dist):
     intersection = adj_intersect(intersection, new_dir)
     ray.end = intersection
     ray.t = dist
+    trace.value.dist = dist
+    trace.value.ray = ray
+    trace.value.weight = weight
 
     new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
     r = Ray(intersection, new_dir, phase_offset=ray.get_end_phase_offest(), phasor=new_phasor)
@@ -234,13 +224,14 @@ def radiance(trace, ray, ls, depth, RRprob, weight, total_dist):
     fresnel = transmission_fresnel(costhetai, costhetat, 1.0, ls.eta, 1.0, ls.eta, into, True)
 
     tdir = normalize((ray.direction*nnt - n*((1 if into else -1)*(ddn*nnt + math.sqrt(cos2t)))))
-    
     intersection = adj_intersect(intersection, tdir)
     ray.end = intersection
     ray.t = dist
-    
-    new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
+    trace.value.dist = dist
+    trace.value.ray = ray
+    trace.value.weight = weight
 
+    new_phasor = fresnel*ray.get_amp()*np.exp(-1j*(2*np.pi/ray.wavelength*total_dist))
     r = Ray(intersection, tdir, phase_offset=ray.get_end_phase_offest(), phasor=new_phasor)
     new_trace = TraceInfo(ray)
     new_trace = radiance(new_trace, r, ls, depth, RRprob, weight, total_dist)
@@ -503,7 +494,7 @@ def makeplot():
         trace = Node(root)
         return_trace = radiance(root, ray, lineseg, 0, 0.95, 1, 0)
         
-        if return_trace.num > 1:
+        if return_trace.height > 0:
             print("---return trace is greater than 1---")
             # print("RETURN", return_trace.tot_dist)
             return_ray = return_trace.rays[0]

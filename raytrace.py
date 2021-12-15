@@ -11,10 +11,10 @@ from utils import ArcIntervalTree
 
 ANGLE_I = math.radians(0.0)
 IOR = 1.5
-NUM_RAYS = 100
+NUM_RAYS = 10
 RAY_OPACITY = 1
-ARC_RES = 100
-SUR_RES = 100
+ARC_RES = 1000
+SUR_RES = 77
 ZOOM_SIZE = 5
 
 BOUNCE_COLOR = ['tab:blue','tab:orange', 'tab:green', 'tab:red', 'tab:pink']
@@ -39,10 +39,11 @@ class Ray:
         #     return None
 
         # num_cycles = self.t/self.wavelength
+        
         # offset = self.t%self.wavelength
         # offset_ratio = offset/self.wavelength
-
-        # return (offset_ratio*2*math.pi + self.phase_offset)%(2*math.pi)
+        # print("OFFSET", (offset_ratio*2*math.pi + self.phase_offset))
+        # return (offset_ratio*2*math.pi + self.phase_offset)
         print("OFFSET:", cmath.phase(self.phasor))
         return cmath.phase(self.phasor)
 
@@ -84,6 +85,9 @@ class LineSeg:
                     # return point, t1, i
                     if intersect_t == None or t1 < intersect_t:
                         intersect_p, intersect_t, seg_num = point, t1, i
+                        print("INTERSCTION_POINT", intersect_p)
+                        print("NORMAL", self.normals[i])
+                        print("SEG NUM", i)
         
         # return [], None, None
         return intersect_p, intersect_t, seg_num
@@ -162,8 +166,8 @@ def transmission_fresnel(costhetai, costhetat, etai_parl, etat_parl, etai_perp, 
     rp = 2*(etai_parl*costhetai) / ((etat_parl*costhetai) + (etai_parl*costhetat)) # Rp
     # tp = (2*etai_parl*costhetai)/(etat_parl*costhetai + etai_parl*costhetat)
     
-    return rs if perp else rp
-    # return 1
+    # return rs if perp else rp
+    return 1
 
 def adj_intersect(intersect, direction):
     return intersect+1e-10*direction
@@ -268,9 +272,11 @@ def perp_normal(p1, p2):
 
 def collect_bin_ang(d):
     ang = math.acos(np.dot(np.array(normalize([1, 0])), d))
-    if d[1] < 0:
-        ang = -ang+2*math.pi
-    ang = (ang-math.pi)%(2*math.pi)
+    # print("ANG", math.degrees(ang))
+    ang = (math.pi/2-ang)%(2*math.pi)
+    # if d[1] < 0:
+    #     ang = -ang+2*math.pi
+    # ang = (ang-math.pi)%(2*math.pi)
     return math.degrees(ang)
 
 # def generate_ray(ang, num):
@@ -289,7 +295,11 @@ def collect_bin_ang(d):
 # Rays going downwards
 def generate_ray(ang, num):
     # ox = num/NUM_RAYS-3
-    ox = num/NUM_RAYS-0.5
+    ox = num/NUM_RAYS
+    # if num == 0:
+    #     ox = 0
+    # elif num == 1:
+    #     ox = 0.3333333333333333
     # print(ox)
     # print("cos", math.tan(ANGLE_I))
     oy = 1+num/NUM_RAYS*math.tan(ANGLE_I)
@@ -387,24 +397,25 @@ def plot_trace(ax, ray, return_trace, collect_circ):
 def plot_surface():
     def height(x):
         # y = -2 
-        y = (x/5)**2*2-2
+        # y = (x/5)**2*2-2
         # y = -math.sqrt(4-x**2)
-        # y = math.sin(x*13)/10-1
+        y = math.sin(x*10)/50-1
         # y = math.sin(x*2)-1
-        return y
+        return y + random.random()*1e-5
 
     points = []
     normals = []
     for i in range(-10*SUR_RES, 10*SUR_RES):
-        j = i/5/SUR_RES
+        j = i/SUR_RES
         points.append(np.array([j, height(j)]))
 
         if len(points) > 1:
             normals.append(np.array(perp_normal(points[len(points)-2], points[len(points)-1])))
 
+    # make circle
     if False:
         for i in range(-10*SUR_RES, 10*SUR_RES):
-            j = i/5/SUR_RES
+            j = i/SUR_RES
             points.append(np.array([-j, -height(j)]))
 
             if len(points) > 1:
@@ -421,13 +432,17 @@ def plot_surface():
         
     return lineseg
 
+def ang_diff(ang1, ang2):
+    diff = (ang2-ang1+180)%360-180
+    return diff+360 if diff < -180 else diff
+
 def calculate_interference(ang, interval_set):
     intf = 0 
     intrpol_amp = 0
+    if len(interval_set) == 0:
+        return intf, intrpol_amp
+
     for ang1, ang2, data in interval_set:
-        # print("BEG", beg)
-        # print("END", end)
-        # print(data)
         trace1 = data[0]
         trace2 = data[1]
 
@@ -445,28 +460,31 @@ def calculate_interference(ang, interval_set):
             raise Exception("rare case of ang being same happened, should've crashed already")
             # intf = intf + (rray1.phasor+rray2.phasor)/2
         else:
-            w1 = (ang2 - ang)/(ang2 - ang1)
-            w2 = (ang - ang1)/(ang2 - ang1)
- 
+            # w1 = (ang2 - ang)/(ang2 - ang1)
+            # w2 = (ang - ang1)/(ang2 - ang1)
+            w1 = ang_diff(ang, ang2)/ang_diff(ang1, ang2)
+            w2 = ang_diff(ang1, ang)/ang_diff(ang1, ang2)
+            if np.abs(w1+w2-1) > 1e-5:
+                raise Exception("Weights w1, w2 don't add up to 1.0")
+                
+            # print("ORG DIFF", np.linalg.norm(iray2.origin-iray1.origin))
             arc_w = np.linalg.norm(iray2.origin-iray1.origin)/diff
             # print("arc_w", arc_w)
-            # print("SUB DIST", np.linalg.norm(iray2.origin-iray1.origin))
-            # print("DIFF", diff)
-            # print("iray1", iray1.origin)
-            # print("iray2", iray2.origin)
             # print("rray1", np.abs(rray1.phasor)**2)
             # print("rray2", np.abs(rray2.phasor)**2)
             
             # print("AMPLITUDE", w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))
             intf = intf + (w1*rray1.phasor + w2*rray2.phasor)*math.sqrt(arc_w)
-            intrpol_amp = intrpol_amp + (w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))*math.sqrt(arc_w)
+            # intrpol_amp = intrpol_amp + (w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))*math.sqrt(arc_w)
+            intrpol_amp = intrpol_amp + (np.abs(w1*rray1.phasor + w2*rray2.phasor)*math.sqrt(arc_w))**2
             # print("phasor 1", np.abs(rray1.phasor), rray1.phasor)
             # print("phasor 2", np.abs(rray2.phasor), rray2.phasor)
-            # print("W", w1+w2)
-            # print("AMP", (w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor)))
-            # print("AMP1", np.abs(rray1.phasor))
-            # print("AMP2", np.abs(rray2.phasor))
-    # print("INTF", intf)
+            # print("AMP", np.abs((w1*rray1.phasor + w2*rray2.phasor))**2)
+            # print("AMP1", np.abs(rray1.phasor)**2)
+            # print("AMP2", np.abs(rray2.phasor)**2)
+
+    intf = intf/math.sqrt(len(interval_set))
+
     return intf, intrpol_amp
     
 def makeplot():
@@ -519,7 +537,7 @@ def makeplot():
             prev_ang = ang
 
     # print("tree", len(tree))
-    print("INCIDENT ENERGY/ DIST", np.linalg.norm(rays[0].origin-rays[-1].origin))
+    print("INCIDENT ENERGY", np.linalg.norm(rays[0].origin-rays[-1].origin))
     # tree intervals are [beg, end)
     # a = tree.get_intervals(45)
     # for i in a:
@@ -529,7 +547,7 @@ def makeplot():
     ys = []
     sum_intensity = 0
     sum_intensity_from_amp = 0
-
+    print(tree)
     for i in range(360*ARC_RES):
         arc = i/ARC_RES
         xs.append(arc)
@@ -538,7 +556,7 @@ def makeplot():
         if x!=0: 
             # print("angle intensity:", arc, (np.abs(x)**2)/ARC_RES)
             sum_intensity = sum_intensity + (np.abs(x)**2)/ARC_RES
-            sum_intensity_from_amp = sum_intensity_from_amp + x1**2/ARC_RES
+            sum_intensity_from_amp = sum_intensity_from_amp + x1/ARC_RES
     print("ENERGY", sum_intensity)
     print("ENERGY INTRPOL AMP", sum_intensity_from_amp)
     plot2 = plt.figure(2)
@@ -562,8 +580,4 @@ def makeplot():
 
     plt.show()
 
-
 makeplot()
-
-# 10 rays: outgoing energy: 1.27282423, incident energy: 1.2727922061357855
-    

@@ -13,8 +13,8 @@ ANGLE_I = math.radians(0.0)
 IOR = 1.5
 NUM_RAYS = 10
 RAY_OPACITY = 1
-ARC_RES = 1000
-SUR_RES = 77
+ARC_RES = 1
+SUR_RES = 100
 ZOOM_SIZE = 5
 
 BOUNCE_COLOR = ['tab:blue','tab:orange', 'tab:green', 'tab:red', 'tab:pink']
@@ -295,7 +295,7 @@ def collect_bin_ang(d):
 # Rays going downwards
 def generate_ray(ang, num):
     # ox = num/NUM_RAYS-3
-    ox = num/NUM_RAYS
+    ox = num/NUM_RAYS-(0.5-1/NUM_RAYS)
     # if num == 0:
     #     ox = 0
     # elif num == 1:
@@ -373,13 +373,8 @@ def plot_trace(ax, ray, return_trace, collect_circ):
     num_bounce = return_trace.num - 1
 
     draw_rays(rrays[num_bounce], "grey")
-    # print("FIRST origin", ray.origin)
-    # print("FIRST direction", ray.direction)
 
     if trace_len > 0:
-        # print("origin", rrays[trace_len-1].origin)
-        # print("direction", rrays[trace_len-1].direction)
-
         for i in range(1, num_bounce):
             r = rrays[trace_len-1-i]
             draw_rays(r, BOUNCE_COLOR[(num_bounce-1)%5])
@@ -397,16 +392,16 @@ def plot_trace(ax, ray, return_trace, collect_circ):
 def plot_surface():
     def height(x):
         # y = -2 
-        # y = (x/5)**2*2-2
+        y = (x/5)**2*2-2
         # y = -math.sqrt(4-x**2)
-        y = math.sin(x*10)/50-1
+        # y = math.sin(x*10)/50-1
         # y = math.sin(x*2)-1
         return y + random.random()*1e-5
 
     points = []
     normals = []
     for i in range(-10*SUR_RES, 10*SUR_RES):
-        j = i/SUR_RES
+        j = i/SUR_RES/5
         points.append(np.array([j, height(j)]))
 
         if len(points) > 1:
@@ -415,7 +410,7 @@ def plot_surface():
     # make circle
     if False:
         for i in range(-10*SUR_RES, 10*SUR_RES):
-            j = i/SUR_RES
+            j = i/SUR_RES/5
             points.append(np.array([-j, -height(j)]))
 
             if len(points) > 1:
@@ -452,16 +447,12 @@ def calculate_interference(ang, interval_set):
         iray1 = trace1.rays[-1]
         iray2 = trace2.rays[-1]
 
-        # diff = ang2-1-ang1
         diff = (ang2-ang1)
-        # print("DIFF", diff)
 
         if diff == 0:
             raise Exception("rare case of ang being same happened, should've crashed already")
             # intf = intf + (rray1.phasor+rray2.phasor)/2
         else:
-            # w1 = (ang2 - ang)/(ang2 - ang1)
-            # w2 = (ang - ang1)/(ang2 - ang1)
             w1 = ang_diff(ang, ang2)/ang_diff(ang1, ang2)
             w2 = ang_diff(ang1, ang)/ang_diff(ang1, ang2)
             if np.abs(w1+w2-1) > 1e-5:
@@ -469,22 +460,13 @@ def calculate_interference(ang, interval_set):
                 
             # print("ORG DIFF", np.linalg.norm(iray2.origin-iray1.origin))
             arc_w = np.linalg.norm(iray2.origin-iray1.origin)/diff
-            # print("arc_w", arc_w)
-            # print("rray1", np.abs(rray1.phasor)**2)
-            # print("rray2", np.abs(rray2.phasor)**2)
             
-            # print("AMPLITUDE", w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))
             intf = intf + (w1*rray1.phasor + w2*rray2.phasor)*math.sqrt(arc_w)
             # intrpol_amp = intrpol_amp + (w1*np.abs(rray1.phasor) + w2*np.abs(rray2.phasor))*math.sqrt(arc_w)
             intrpol_amp = intrpol_amp + (np.abs(w1*rray1.phasor + w2*rray2.phasor)*math.sqrt(arc_w))**2
             # print("phasor 1", np.abs(rray1.phasor), rray1.phasor)
             # print("phasor 2", np.abs(rray2.phasor), rray2.phasor)
             # print("AMP", np.abs((w1*rray1.phasor + w2*rray2.phasor))**2)
-            # print("AMP1", np.abs(rray1.phasor)**2)
-            # print("AMP2", np.abs(rray2.phasor)**2)
-
-    intf = intf/math.sqrt(len(interval_set))
-
     return intf, intrpol_amp
     
 def makeplot():
@@ -547,7 +529,7 @@ def makeplot():
     ys = []
     sum_intensity = 0
     sum_intensity_from_amp = 0
-    print(tree)
+    # print(tree)
     for i in range(360*ARC_RES):
         arc = i/ARC_RES
         xs.append(arc)
@@ -556,9 +538,9 @@ def makeplot():
         if x!=0: 
             # print("angle intensity:", arc, (np.abs(x)**2)/ARC_RES)
             sum_intensity = sum_intensity + (np.abs(x)**2)/ARC_RES
-            sum_intensity_from_amp = sum_intensity_from_amp + x1/ARC_RES
+            # sum_intensity_from_amp = sum_intensity_from_amp + x1/ARC_RES
     print("ENERGY", sum_intensity)
-    print("ENERGY INTRPOL AMP", sum_intensity_from_amp)
+    # print("ENERGY INTRPOL AMP", sum_intensity_from_amp)
     plot2 = plt.figure(2)
     plt.plot(xs, ys)
 

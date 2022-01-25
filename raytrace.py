@@ -377,3 +377,5 @@ print("REFLECTED ENERGY", intensity_refl)
 print("TRANSMITTED ENERGY", intensity_tran)
 print("RESULTING ENERGY", intensity_refl + intensity_tran)
 print("ERROR IN ENERGY", error)
+
+plt.show()

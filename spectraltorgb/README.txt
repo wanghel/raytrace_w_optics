@@ -1,22 +1,10 @@
-d65 = data.d65;
-scale = 5;
-xyz = ToXYZ(Avec*scale, lambdanum, lambdastart, lambdaend, d65);
+Assume Avec is the matrix storing the scattering distirbutions, the coloums are different wavelengths, the rows are different angles. lambdanum is number of wavelengths, lambdastart is the starting wavelength (in nm), lambdaend is the ending wavelength (in nm). d65 is the d65 specturm.
+
+# convert spectral distribution to XYZ (in CIE 1931 space)
+xyz = ToXYZ(Avec, lambdanum, lambdastart, lambdaend, d65);
+
+# convert XYZ to rgb
 rgb = XYZToRGB(xyz);
-rgbga = lin2rgb(rgb);
+
+# optional: convert floating point numbers to 8 bit
 uint8im = uint8(255 * rgbga);
-
-Rv = reshape(uint8im(:,1),[phionum, phiinum, thetanum]);
-Gv = reshape(uint8im(:,2),[phionum, phiinum, thetanum]);
-Bv = reshape(uint8im(:,3),[phionum, phiinum, thetanum]);
-R = reshape(Rv(:,:,thetaindex),[phionum, phiinum]);
-G = reshape(Gv(:,:,thetaindex),[phionum, phiinum]);
-B = reshape(Bv(:,:,thetaindex),[phionum, phiinum]);
-R = concatenateimg(R, phionum);
-G = concatenateimg(G, phionum);
-B = concatenateimg(B, phionum);
-
-% num = 10;
-% R = removeforward(R, num, phionum);
-% G = removeforward(G, num, phionum);
-% B = removeforward(B, num, phionum);
-imgRGB = cat(3, R, G, B);
